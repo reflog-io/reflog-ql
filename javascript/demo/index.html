@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RQL Plain-Text Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 1rem;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 1rem 0; }
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .panels { grid-template-columns: 1fr; }
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 400px;
+    }
+    .panel h2 {
+      font-size: 0.9375rem;
+      margin: 0 0 0.5rem 0;
+      color: #333;
+    }
+    .panel-schema textarea {
+      width: 100%;
+      min-height: 380px;
+      padding: 0.75rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      border: 2px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      resize: vertical;
+      transition: border-color 0.15s;
+    }
+    .panel-schema textarea:focus {
+      border-color: #0066cc;
+    }
+    .panel-schema textarea.invalid {
+      border-color: #c00;
+      background: #fff5f5;
+    }
+    .schema-error {
+      font-size: 0.8125rem;
+      color: #c00;
+      margin-top: 0.25rem;
+      min-height: 1.25rem;
+    }
+    .panel-demo p {
+      color: #666;
+      font-size: 0.875rem;
+      margin: 0 0 0.75rem 0;
+    }
+    .input-wrap {
+      position: relative;
+      margin-bottom: 0.5rem;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      font: 1rem/1.5 inherit;
+      border: 2px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus {
+      border-color: #0066cc;
+    }
+    input[type="text"].invalid {
+      border-color: #c00;
+      background: #fff5f5;
+    }
+    input[type="text"].invalid:focus {
+      border-color: #c00;
+    }
+    #autocomplete-list {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 100%;
+      margin-top: 2px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      z-index: 10;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #autocomplete-list:empty { display: none; }
+    #autocomplete-list li {
+      padding: 0.4rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.9375rem;
+    }
+    #autocomplete-list li:hover,
+    #autocomplete-list li.selected {
+      background: #e8f0fe;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      font: inherit;
+      background: #0066cc;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 1rem;
+    }
+    button:hover { background: #0052a3; }
+    .output-wrap { margin-top: 0.5rem; }
+    .output-wrap h3 { font-size: 0.9375rem; margin: 0 0 0.25rem 0; }
+    pre {
+      margin: 0;
+      padding: 1rem;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 0.8125rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    pre.empty { color: #999; }
+  </style>
+</head>
+<body>
+  <h1>RQL Plain-Text Demo</h1>
+
+  <div class="panels">
+    <div class="panel panel-schema">
+      <h2>Schema (JSON)</h2>
+      <p style="color:#666;font-size:0.875rem;margin:0 0 0.5rem 0;">Edit the schema to change entities, relations, and fields. The demo on the right uses this schema for validation and autocomplete.</p>
+      <textarea id="schema-input" spellcheck="false" placeholder="Loading..."></textarea>
+      <div id="schema-error" class="schema-error" aria-live="polite"></div>
+    </div>
+
+    <div class="panel panel-demo">
+      <h2>Query demo</h2>
+      <p>Type a query (e.g. <code>entity:product limit:10 where:(status=published)</code> or <code>entity:order where:(status=paid)</code>). Red border = invalid. Use the dropdown to complete.</p>
+
+      <form id="demo-form">
+        <div class="input-wrap">
+          <input
+            type="text"
+            id="query-input"
+            placeholder="entity:product limit:10 where:(status=published)"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="RQL query"
+          />
+          <ul id="autocomplete-list" role="listbox" aria-label="Suggestions"></ul>
+        </div>
+        <button type="submit">Parse to JSON</button>
+      </form>
+
+      <div class="output-wrap">
+        <h3>Output (RQL JSON)</h3>
+        <pre id="json-output" class="empty">Submit a query to see the parsed JSON.</pre>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="demo.js"></script>
+</body>
+</html>

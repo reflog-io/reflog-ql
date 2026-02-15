@@ -1,0 +1,24 @@
+{
+  "name": "@reflog-io/rql",
+  "version": "0.1.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "pretest": "npm run build",
+    "test": "node --test src/**/*.test.js",
+    "prepare-demo": "node scripts/prepare-demo.js",
+    "demo": "npm run build && node scripts/prepare-demo.js && npx serve demo --open"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4",
+    "typescript": "^5.9.3"
+  }
+}

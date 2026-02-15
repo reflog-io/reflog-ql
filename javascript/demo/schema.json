@@ -1,0 +1,38 @@
+{
+  "entities": [
+    {
+      "name": "product",
+      "relations": ["reviews", "category"],
+      "fields": {
+        "status": { "type": "string", "values": ["draft", "published", "archived"] },
+        "category": { "type": "string", "values": ["electronics", "books", "clothing", "home"] },
+        "price": { "type": "number" },
+        "stock": { "type": "number" }
+      }
+    },
+    {
+      "name": "order",
+      "relations": ["customer", "items"],
+      "fields": {
+        "status": { "type": "string", "values": ["pending", "paid", "shipped", "delivered", "cancelled"] },
+        "total": { "type": "number" }
+      }
+    },
+    {
+      "name": "review",
+      "relations": ["product", "customer"],
+      "fields": {
+        "rating": { "type": "number" },
+        "status": { "type": "string", "values": ["pending", "approved", "rejected"] }
+      }
+    },
+    {
+      "name": "customer",
+      "relations": ["orders", "reviews"],
+      "fields": {
+        "status": { "type": "string", "values": ["active", "inactive"] },
+        "tier": { "type": "string", "values": ["bronze", "silver", "gold"] }
+      }
+    }
+  ]
+}

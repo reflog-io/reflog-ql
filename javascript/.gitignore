@@ -1,0 +1,5 @@
+# Built output
+dist/
+
+# Demo deploy: copied so demo folder is self-contained (do not commit)
+demo/dist/
