@@ -4,7 +4,7 @@
 
 import type { Schema, EntityDef, FieldDef } from "./schema.js";
 
-const TOP_LEVEL_KEYS = ["entity:", "limit:", "include:", "where:("] as const;
+const TOP_LEVEL_KEYS = ["entity:", "limit:", "order:", "include:", "where:("] as const;
 const WHERE_OPS = ["!=", "<=", ">=", "=", "<", ">"] as const; // Order matters: check longer ops first
 
 interface SegmentResult {
@@ -29,6 +29,7 @@ export type CursorContext =
   | { kind: "top-level"; partial: string; usedKeys: string[] }
   | { kind: "entity-value"; partial: string }
   | { kind: "limit-value"; partial: string }
+  | { kind: "order-value"; partial: string; entityValue: string; afterField?: boolean }
   | { kind: "include-value"; partial: string; entityValue: string }
   | { kind: "where-field"; partial: string; entityValue: string }
   | {
@@ -85,6 +86,38 @@ function getSegmentAtCursor(query: string, cursor: number): SegmentResult {
       };
     }
 
+    // order: – value can contain spaces (e.g. "order:price asc,name"); skip until next key
+    const orderPrefix = "order:";
+    if (beforeCursor.slice(i, i + orderPrefix.length).toLowerCase() === orderPrefix) {
+      lastClauseStart = clauseStart;
+      const segmentEnd = findNextKeyStart(beforeCursor, i + orderPrefix.length);
+      if (cursor < segmentEnd) {
+        return {
+          segment: beforeCursor.slice(i, cursor),
+          startIndex: i,
+        };
+      }
+      // Cursor at or past end of order value
+      if (segmentEnd < len) {
+        lastClauseStart = segmentEnd;
+        i = segmentEnd;
+        continue;
+      }
+      // Cursor at end of query: if trailing space and order value is empty ("order:" or "order: "), we're "after" order (top-level)
+      if (cursor === len && /\s$/.test(beforeCursor)) {
+        const orderValue = beforeCursor.slice(i + orderPrefix.length, segmentEnd).trim();
+        if (orderValue === "") {
+          lastClauseStart = len;
+          i = len;
+          continue;
+        }
+      }
+      return {
+        segment: beforeCursor.slice(i, cursor),
+        startIndex: i,
+      };
+    }
+
     // entity:, limit:, include: – clause start
     const keyMatch = beforeCursor.slice(i).match(/^(entity|limit|include):/i);
     if (keyMatch) {
@@ -102,7 +135,7 @@ function getSegmentAtCursor(query: string, cursor: number): SegmentResult {
             beforeCursor[i + 6] === "("
           )
             break;
-          if (/^(entity|limit|include):/i.test(beforeCursor.slice(i))) break;
+          if (/^(entity|limit|order|include):/i.test(beforeCursor.slice(i))) break;
           if (beforeCursor[i] === '"') {
             i = skipQuotedString(beforeCursor, i);
             continue;
@@ -132,6 +165,17 @@ function getSegmentAtCursor(query: string, cursor: number): SegmentResult {
     segment: beforeCursor.slice(lastClauseStart),
     startIndex: lastClauseStart,
   };
+}
+
+/**
+ * Find the start index of the next top-level key (space followed by entity|limit|order|include|where:).
+ * Returns s.length if none found.
+ */
+function findNextKeyStart(s: string, fromIndex: number): number {
+  const re = /\s(entity|limit|order|include|where):/gi;
+  re.lastIndex = fromIndex;
+  const match = re.exec(s);
+  return match ? match.index : s.length;
 }
 
 /**
@@ -188,7 +232,7 @@ function getEntityValueFromQuery(query: string): string {
 }
 
 /**
- * Returns top-level keys (entity, limit, include, where) already present in the query.
+ * Returns top-level keys (entity, limit, order, include, where) already present in the query.
  */
 function getTopLevelKeysUsed(query: string): string[] {
   const keys = new Set<string>();
@@ -211,6 +255,13 @@ function getTopLevelKeysUsed(query: string): string[] {
     if (query.slice(i, i + 6) === "where:") {
       keys.add("where");
       i = skipWhereBlock(query, i);
+      continue;
+    }
+
+    // Handle order: specially (value can contain spaces)
+    if (query.slice(i, i + 6).toLowerCase() === "order:") {
+      keys.add("order");
+      i = findNextKeyStart(query, i + 6);
       continue;
     }
 
@@ -420,6 +471,9 @@ export function getContext(query: string, cursor: number): CursorContext {
         return { kind: "entity-value", partial: "" };
       if (trimmedSegment === "limit")
         return { kind: "limit-value", partial: "" };
+      if (trimmedSegment === "order") {
+        return { kind: "order-value", partial: "", entityValue };
+      }
       if (trimmedSegment === "include") {
         return { kind: "include-value", partial: "", entityValue };
       }
@@ -442,6 +496,26 @@ export function getContext(query: string, cursor: number): CursorContext {
 
     case "limit":
       return { kind: "limit-value", partial: value.trim() };
+
+    case "order": {
+      // Value is comma-separated terms (field or "field dir"); current partial = last token of last term
+      const afterLastComma = value.includes(",")
+        ? value.slice(value.lastIndexOf(",") + 1)
+        : value;
+      // Trailing space means we're completing direction (asc/desc), so partial is ""
+      const partial =
+        afterLastComma.endsWith(" ") || afterLastComma.trim() === ""
+          ? ""
+          : (() => {
+              const trimmed = afterLastComma.trimEnd();
+              const lastSpace = trimmed.lastIndexOf(" ");
+              return lastSpace === -1 ? trimmed : trimmed.slice(lastSpace + 1);
+            })();
+      // Only suggest asc/desc when we're after a field name (e.g. "order:name " or "order:created_at ")
+      const afterField =
+        afterLastComma.trimEnd().length > 0 && afterLastComma.endsWith(" ");
+      return { kind: "order-value", partial, entityValue, afterField };
+    }
 
     case "include": {
       // Handle comma-separated relations
@@ -530,6 +604,35 @@ export function getSuggestions(
     case "limit-value":
       // Could suggest common limits: 10, 25, 50, 100
       return [];
+
+    case "order-value": {
+      const relevantEntities = findRelevantEntities(
+        schema,
+        context.entityValue,
+      );
+      const fieldMap = new Map<string, FieldDef>();
+      for (const entity of relevantEntities) {
+        for (const [fieldName, fieldDef] of Object.entries(
+          entity.fields ?? {},
+        )) {
+          if (matchesPartial(fieldName)) {
+            fieldMap.set(fieldName, fieldDef);
+          }
+        }
+      }
+      const suggestions: Suggestion[] = Array.from(fieldMap.keys()).map((f) =>
+        withReplace({ label: f, insertText: f }),
+      );
+      // Only suggest asc/desc when we're after a field name (e.g. "order:name ")
+      if (context.afterField) {
+        for (const dir of ["asc", "desc"]) {
+          if (matchesPartial(dir)) {
+            suggestions.push(withReplace({ label: dir, insertText: dir }));
+          }
+        }
+      }
+      return suggestions;
+    }
 
     case "include-value": {
       const relevantEntities = findRelevantEntities(

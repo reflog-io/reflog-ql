@@ -2,6 +2,8 @@
 
 RQL is a query language for selecting and filtering entities. This repo defines the language in two specs and provides a reference implementation.
 
+You can see a working [demo here](https://reflog-io.github.io/reflog-ql/).
+
 ## Specs (high level)
 
 ### [SPEC.md](SPEC.md) - JSON schema

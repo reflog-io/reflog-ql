@@ -17,26 +17,49 @@ A single-line, human-friendly syntax that maps to the [RQL JSON schema](SPEC.md)
 
 All top-level clauses use the form **`key:value`**. Keys are fixed; order is irrelevant. Spaces separate clauses.
 
-| Key     | Plain-text form | Maps to RQL                                    |
-| ------- | --------------- | ---------------------------------------------- |
-| Entity  | `entity:name`   | `entity`                                       |
-| Limit   | `limit:N`       | `limit`                                        |
-| Include | `include:a,b,c` | `include: { "a": true, "b": true, "c": true }` |
-| Where   | `where:(...)`   | `where`                                        |
+| Key     | Plain-text form              | Maps to RQL                                    |
+| ------- | ---------------------------- | ---------------------------------------------- |
+| Entity  | `entity:name`                 | `entity`                                       |
+| Limit   | `limit:N`                    | `limit`                                        |
+| Order   | `order:field dir,...`        | `order: [{ "field", "dir" }, ...]`             |
+| Include | `include:a,b,c`               | `include: { "a": true, "b": true, "c": true }`  |
+| Where   | `where:(...)`                | `where`                                        |
 
 **Examples:**
 
 ```
 entity:users
 entity:users limit:10
-entity:products limit:20 include:reviews,category
+entity:users limit:10 order:created_at desc
+entity:products limit:20 include:reviews,category order:price asc,name
 entity:users limit:5 where:(status=active)
 ```
 
 - **entity** - Required in practice (omitted = invalid or "all" per implementation).
 - **limit** - Non-negative integer.
+- **order** - Comma-separated sort terms; each term is `field` or `field asc` or `field desc`. Default direction is `asc`. See [Order clause](#order-clause) below.
 - **include** - Comma-separated list of relation names; each becomes `true` in the RQL `include` object.
 - **where** - See [Where clause](#where-clause) below.
+
+---
+
+## Order clause
+
+The `order` value is a comma-separated list of **sort terms**. Each term is a field name optionally followed by a direction.
+
+- **Direction:** `asc` (ascending) or `desc` (descending). Case-insensitive. Default is `asc` when omitted.
+- **Multiple terms:** Sort by the first term, then by the second, and so on. Example: `order:created_at desc,name asc` → newest first, then by name.
+
+**Examples:**
+
+```
+order:name
+order:created_at desc
+order:price asc,name asc
+order:created_at desc,name
+```
+
+**Mapping to RQL:** Each term becomes one element in the `order` array: `{ "field": "<fieldname>", "dir": "asc" | "desc" }`. Omitted direction in plain-text maps to `"dir": "asc"`.
 
 ---
 
@@ -141,6 +164,32 @@ entity:products limit:20 include:reviews,category where:(price<100 stock>0 categ
 }
 ```
 
+**Another (with order):**
+
+**Plain text:**
+
+```
+entity:products limit:5 order:price asc,name where:(stock>0)
+```
+
+**Maps to RQL:**
+
+```json
+{
+  "entity": "products",
+  "limit": 5,
+  "order": [
+    { "field": "price", "dir": "asc" },
+    { "field": "name", "dir": "asc" }
+  ],
+  "where": {
+    "and": [
+      { "field": "stock", "op": ">", "value": 0 }
+    ]
+  }
+}
+```
+
 **Another (with OR and grouping):**
 
 **Plain text:**
@@ -174,10 +223,11 @@ entity:users limit:10 where:((role=admin) OR (age>=18 AND verified=true))
 ## Lexing and parsing notes
 
 1. **Split top-level clauses** by spaces, but respect quoted strings so that e.g. `where:(title="Hello World")` is one clause.
-2. **Key:value:** For each clause, the first `:` separates key from value. So `entity:users`, `limit:10`, `include:a,b`, `where:(...)`.
-3. **Where expression:** After stripping `where:(` and the closing `)`, parse the inner string as a condition expression: tokens (including quoted strings), operators (`=`, `!=`, `<`, `>`, `<=`, `>=`), and keywords `AND` / `OR`, with parentheses for grouping.
-4. **Value types:** Unquoted numeric tokens → number; `true`/`false` → boolean; otherwise string. Quoted → string.
-5. **Whitespace:** Ignore spaces between tokens; spaces are not part of values except inside quotes.
+2. **Key:value:** For each clause, the first `:` separates key from value. So `entity:users`, `limit:10`, `include:a,b`, `order:...`, `where:(...)`.
+3. **Order value:** Split the value by commas; each term is a field name optionally followed by `asc` or `desc` (case-insensitive). Default direction is `asc`.
+4. **Where expression:** After stripping `where:(` and the closing `)`, parse the inner string as a condition expression: tokens (including quoted strings), operators (`=`, `!=`, `<`, `>`, `<=`, `>=`), and keywords `AND` / `OR`, with parentheses for grouping.
+5. **Value types:** Unquoted numeric tokens → number; `true`/`false` → boolean; otherwise string. Quoted → string.
+6. **Whitespace:** Ignore spaces between tokens; spaces are not part of values except inside quotes.
 
 ---
 
@@ -187,6 +237,7 @@ entity:users limit:10 where:((role=admin) OR (age>=18 AND verified=true))
 | -------------- | ---------------------------------- | ---------------------------------------------------- |
 | Entity         | `entity:users`                     | Required.                                            |
 | Limit          | `limit:10`                         | Integer ≥ 0.                                         |
+| Order          | `order:created_at desc,name`       | Comma-separated terms; optional `asc`/`desc`.       |
 | Include        | `include:comments,articles`        | Comma-separated relations.                           |
 | Where (simple) | `where:(status=active)`            | One comparison.                                      |
 | Where (AND)    | `where:(a=1 b=2)`                  | Space = AND.                                         |

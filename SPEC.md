@@ -156,6 +156,37 @@ Request that related entities be loaded and returned with each result. The backe
 
 ---
 
+## Order (sorting)
+
+Request that results be sorted by one or more fields.
+
+```json
+{ "order": [ { "field": "created_at", "dir": "desc" }, { "field": "name", "dir": "asc" } ] }
+```
+
+**Shape:** `order` is an array of objects, each with:
+
+- **`field`** (string) – name of the field to sort by.
+- **`dir`** (string) – `"asc"` (ascending) or `"desc"` (descending). Default is `"asc"` if omitted.
+
+**Semantics:**
+
+- If `order` is omitted, result order is implementation-defined (e.g. insertion order or undefined).
+- Sorts are applied left-to-right: first by the first term, then by the second within equal first values, and so on.
+- Field names refer to properties on the entity; behavior for missing or null values is implementation-defined.
+
+**Example:**
+
+```json
+{
+  "entity": "users",
+  "order": [ { "field": "created_at", "dir": "desc" }, { "field": "name", "dir": "asc" } ],
+  "limit": 10
+}
+```
+
+---
+
 ## Query shape (summary)
 
 | Field     | Type      | Required | Description                                       |
@@ -163,6 +194,7 @@ Request that related entities be loaded and returned with each result. The backe
 | `entity`  | string    | yes      | Name/type of entities to query                    |
 | `where`   | condition | no       | Filter (and/or + comparisons)                     |
 | `include` | object    | no       | Related entities to load (relation name → `true`) |
+| `order`   | array     | no       | Sort terms: `[{ "field", "dir": "asc" \| "desc" }, ...]` |
 | `limit`   | integer   | no       | Max number of results (≥ 0)                       |
 
 A **condition** is either:
@@ -172,4 +204,4 @@ A **condition** is either:
 
 ---
 
-_More sections (ordering, projections, etc.) to be added._
+_More sections (e.g. projections) may be added later._

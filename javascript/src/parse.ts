@@ -26,9 +26,15 @@ export interface RQLCondition {
   value?: string | number | boolean;
 }
 
+export interface RQLOrderTerm {
+  field: string;
+  dir: "asc" | "desc";
+}
+
 export interface RQLQuery {
   entity?: string;
   limit?: number;
+  order?: RQLOrderTerm[];
   include?: Record<string, boolean>;
   where?: RQLCondition;
 }
@@ -123,6 +129,22 @@ function splitTopLevel(str: string): string[] {
         throw new ParseError("Unclosed quoted string");
       }
       clauses.push(str.slice(start, i));
+      continue;
+    }
+
+    // Handle order: (value may contain spaces, e.g. "order:price asc,name")
+    const orderPrefix = "order:";
+    if (str.slice(i, i + orderPrefix.length) === orderPrefix) {
+      const start = i;
+      i += orderPrefix.length;
+      // Consume until next key: (entity:, limit:, order:, include:, where:) or end
+      const nextKey = /(\s)(entity|limit|order|include|where):/g;
+      nextKey.lastIndex = i;
+      const match = nextKey.exec(str);
+      const end = match ? match.index : str.length;
+      while (i < end && /\s/.test(str[i])) i++;
+      clauses.push(str.slice(start, end));
+      i = end;
       continue;
     }
 
@@ -445,7 +467,7 @@ export function parsePlainText(input: string, schema?: Schema): RQLQuery {
     if (colon === -1) {
       throw new ParseError(
         `Invalid clause "${clause}": expected key:value format (e.g., entity:users). ` +
-          `Valid keys: entity, limit, include, where`,
+          `Valid keys: entity, limit, order, include, where`,
       );
     }
     const key = clause.slice(0, colon).trim().toLowerCase();
@@ -469,6 +491,32 @@ export function parsePlainText(input: string, schema?: Schema): RQLQuery {
         throw new ParseError("limit must be an integer without decimals");
       }
       out.limit = n;
+    } else if (key === "order") {
+      if ("order" in out)
+        throw new ParseError("Duplicate top-level key: order");
+      if (!value) throw new ParseError("order value must be non-empty");
+      const terms: RQLOrderTerm[] = [];
+      for (const part of value.split(",")) {
+        const t = part.trim();
+        if (!t) throw new ParseError("Empty term in order list");
+        const tokens = t.split(/\s+/);
+        const field = tokens[0];
+        const fieldLower = field.toLowerCase();
+        if (fieldLower === "asc" || fieldLower === "desc") {
+          throw new ParseError(
+            `Invalid order term "${field}": order must be a field name (e.g. order:name or order:created_at desc), not a direction alone.`,
+          );
+        }
+        let dir: "asc" | "desc" = "asc";
+        if (tokens.length >= 2) {
+          const d = tokens[1].toLowerCase();
+          if (d === "asc") dir = "asc";
+          else if (d === "desc") dir = "desc";
+          else throw new ParseError(`Invalid order direction "${tokens[1]}". Use asc or desc.`);
+        }
+        terms.push({ field, dir });
+      }
+      out.order = terms;
     } else if (key === "include") {
       if ("include" in out)
         throw new ParseError("Duplicate top-level key: include");
@@ -487,7 +535,7 @@ export function parsePlainText(input: string, schema?: Schema): RQLQuery {
       out.where = parseWhere(inner);
     } else {
       throw new ParseError(
-        `Unknown top-level key: "${key}". Valid keys: entity, limit, include, where`,
+        `Unknown top-level key: "${key}". Valid keys: entity, limit, order, include, where`,
       );
     }
   }

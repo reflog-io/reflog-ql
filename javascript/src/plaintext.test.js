@@ -31,6 +31,71 @@ describe('parsePlainText', () => {
     });
   });
 
+  test('entity + order - single term default asc', () => {
+    assert.deepStrictEqual(parsePlainText('entity:users order:name'), {
+      entity: 'users',
+      order: [{ field: 'name', dir: 'asc' }],
+    });
+    assert.deepStrictEqual(parsePlainText('entity:products order:price'), {
+      entity: 'products',
+      order: [{ field: 'price', dir: 'asc' }],
+    });
+  });
+
+  test('order - explicit asc/desc', () => {
+    assert.deepStrictEqual(parsePlainText('entity:users order:created_at desc'), {
+      entity: 'users',
+      order: [{ field: 'created_at', dir: 'desc' }],
+    });
+    assert.deepStrictEqual(parsePlainText('entity:users order:name asc'), {
+      entity: 'users',
+      order: [{ field: 'name', dir: 'asc' }],
+    });
+  });
+
+  test('order - multiple terms', () => {
+    assert.deepStrictEqual(parsePlainText('entity:users order:created_at desc,name asc'), {
+      entity: 'users',
+      order: [
+        { field: 'created_at', dir: 'desc' },
+        { field: 'name', dir: 'asc' },
+      ],
+    });
+    assert.deepStrictEqual(parsePlainText('entity:products order:price asc,name'), {
+      entity: 'products',
+      order: [
+        { field: 'price', dir: 'asc' },
+        { field: 'name', dir: 'asc' },
+      ],
+    });
+  });
+
+  test('order - direction case-insensitive', () => {
+    assert.deepStrictEqual(parsePlainText('entity:users order:name ASC'), {
+      entity: 'users',
+      order: [{ field: 'name', dir: 'asc' }],
+    });
+    assert.deepStrictEqual(parsePlainText('entity:users order:name DESC'), {
+      entity: 'users',
+      order: [{ field: 'name', dir: 'desc' }],
+    });
+  });
+
+  test('order with other clauses', () => {
+    assert.deepStrictEqual(
+      parsePlainText('entity:products limit:5 order:price asc,name where:(stock>0)'),
+      {
+        entity: 'products',
+        limit: 5,
+        order: [
+          { field: 'price', dir: 'asc' },
+          { field: 'name', dir: 'asc' },
+        ],
+        where: { field: 'stock', op: '>', value: 0 },
+      }
+    );
+  });
+
   test('where - single comparison (equality string)', () => {
     assert.deepStrictEqual(parsePlainText('entity:users where:(status=active)'), {
       entity: 'users',
@@ -214,6 +279,17 @@ describe('parsePlainText', () => {
     assert.deepStrictEqual(c, expected);
   });
 
+  test('clause order is irrelevant (with order)', () => {
+    const expected = {
+      entity: 'users',
+      limit: 5,
+      order: [{ field: 'name', dir: 'asc' }],
+      where: { field: 'x', op: '=', value: 1 },
+    };
+    assert.deepStrictEqual(parsePlainText('entity:users limit:5 order:name where:(x=1)'), expected);
+    assert.deepStrictEqual(parsePlainText('order:name entity:users limit:5 where:(x=1)'), expected);
+  });
+
   test('empty or whitespace input', () => {
     assert.deepStrictEqual(parsePlainText(''), {});
     assert.deepStrictEqual(parsePlainText('   '), {});
@@ -292,6 +368,14 @@ describe('parsePlainText', () => {
     assert.throws(
       () => parsePlainText('entity:users include:a include:b'),
       (err) => err.message === 'Duplicate top-level key: include'
+    );
+  });
+
+  test('duplicate order throws', () => {
+    assert.throws(() => parsePlainText('entity:users order:name order:created_at desc'), ParseError);
+    assert.throws(
+      () => parsePlainText('entity:users order:name order:created_at desc'),
+      (err) => err.message === 'Duplicate top-level key: order'
     );
   });
 
@@ -385,6 +469,23 @@ describe('parsePlainText', () => {
     );
   });
 
+  test('empty order value throws', () => {
+    assert.throws(() => parsePlainText('entity:users order:'), ParseError);
+    assert.throws(
+      () => parsePlainText('entity:users order:'),
+      (err) => err.message === 'order value must be non-empty'
+    );
+  });
+
+  test('order with only direction (asc/desc) throws', () => {
+    assert.throws(() => parsePlainText('entity:product order:asc'), ParseError);
+    assert.throws(() => parsePlainText('entity:users order:desc'), ParseError);
+    assert.throws(
+      () => parsePlainText('entity:product order:asc'),
+      (err) => err.message.includes('Invalid order term') && err.message.includes('field name')
+    );
+  });
+
   test('clause without colon (bare word) throws', () => {
     assert.throws(() => parsePlainText('foo'), ParseError);
     assert.throws(
@@ -400,6 +501,8 @@ describe('parsePlainText', () => {
     assert.equal(isValidPlainText('entity:users'), true);
     assert.equal(isValidPlainText('entity:users limit:10'), true);
     assert.equal(isValidPlainText('entity:users where:(status=active)'), true);
+    assert.equal(isValidPlainText('entity:users order:name'), true);
+    assert.equal(isValidPlainText('entity:products limit:5 order:price asc,name where:(stock>0)'), true);
     assert.equal(isValidPlainText('entity:products limit:20 include:reviews where:(price<100)'), true);
     assert.equal(isValidPlainText(''), true);
     assert.equal(isValidPlainText('   '), true);
@@ -418,6 +521,7 @@ describe('parsePlainText', () => {
     assert.equal(isValidPlainText('entity:users where:(OR a=1)'), false);
     assert.equal(isValidPlainText('user:foo'), false);
     assert.equal(isValidPlainText('entity:users sort:name'), false);
+    assert.equal(isValidPlainText('entity:users order:'), false);
     assert.equal(isValidPlainText('foo'), false);
     assert.equal(isValidPlainText('entity'), false);
   });

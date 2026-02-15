@@ -62,6 +62,14 @@ describe("getContext", () => {
       assert.deepStrictEqual(ctx.usedKeys.sort(), ["entity", "limit"]);
     });
 
+    it("should track order as used key when order clause is present", () => {
+      // Trailing space after empty order value puts cursor at top-level
+      const query = "entity:User order: ";
+      const ctx = getContext(query, query.length);
+      assert.strictEqual(ctx.kind, "top-level");
+      assert.ok(ctx.usedKeys.includes("order"));
+    });
+
     it("should recognize cursor at end of query", () => {
       const ctx = getContext("entity:User ", 12);
       assert.strictEqual(ctx.kind, "top-level");
@@ -100,6 +108,45 @@ describe("getContext", () => {
       const ctx = getContext("limit:10", 8);
       assert.strictEqual(ctx.kind, "limit-value");
       assert.strictEqual(ctx.partial, "10");
+    });
+  });
+
+  describe("order-value context", () => {
+    it("should recognize order: with empty value", () => {
+      const query = "entity:User order:";
+      const ctx = getContext(query, query.length);
+      assert.strictEqual(ctx.kind, "order-value");
+      assert.strictEqual(ctx.partial, "");
+      assert.strictEqual(ctx.entityValue, "User");
+    });
+
+    it("should recognize order: with partial field name", () => {
+      const ctx = getContext("entity:User order:na", 20);
+      assert.strictEqual(ctx.kind, "order-value");
+      assert.strictEqual(ctx.partial, "na");
+      assert.strictEqual(ctx.entityValue, "User");
+    });
+
+    it("should recognize order: with field and space (completing direction)", () => {
+      const query = "entity:User order:name ";
+      const ctx = getContext(query, query.length);
+      assert.strictEqual(ctx.kind, "order-value");
+      assert.strictEqual(ctx.partial, "");
+      assert.strictEqual(ctx.entityValue, "User");
+    });
+
+    it("should recognize order: with partial direction", () => {
+      const ctx = getContext("entity:User order:name d", 26);
+      assert.strictEqual(ctx.kind, "order-value");
+      assert.strictEqual(ctx.partial, "d");
+      assert.strictEqual(ctx.entityValue, "User");
+    });
+
+    it("should handle order: with multiple terms and partial on last", () => {
+      const ctx = getContext("entity:User order:created_at desc,na", 36);
+      assert.strictEqual(ctx.kind, "order-value");
+      assert.strictEqual(ctx.partial, "na");
+      assert.strictEqual(ctx.entityValue, "User");
     });
   });
 
@@ -228,6 +275,22 @@ describe("getContext", () => {
         assert.ok(ctx.usedKeys.includes("where"));
       });
     });
+
+    describe("cursor after order block", () => {
+      it("should be top-level when cursor is after order and limit (trailing space)", () => {
+        const query = "entity:User order:name limit:10 ";
+        const ctx = getContext(query, query.length);
+        assert.strictEqual(ctx.kind, "top-level");
+        assert.ok(ctx.usedKeys.includes("order"));
+      });
+
+      it("should treat partial key after order as order-value (partial is current token)", () => {
+        const query = "entity:User order:name l";
+        const ctx = getContext(query, query.length);
+        assert.strictEqual(ctx.kind, "order-value");
+        assert.strictEqual(ctx.partial, "l");
+      });
+    });
   });
 });
 
@@ -240,6 +303,7 @@ describe("getSuggestions", () => {
       const labels = suggestions.map((s) => s.label);
       assert.ok(labels.includes("entity:"));
       assert.ok(labels.includes("limit:"));
+      assert.ok(labels.includes("order:"));
       assert.ok(labels.includes("include:"));
       assert.ok(labels.includes("where:("));
     });
@@ -259,6 +323,76 @@ describe("getSuggestions", () => {
 
       assert.strictEqual(suggestions.length, 1);
       assert.strictEqual(suggestions[0].label, "entity:");
+    });
+
+    it("should filter out order when order is used", () => {
+      const ctx = { kind: "top-level", partial: "", usedKeys: ["entity", "order"] };
+      const suggestions = getSuggestions(ctx, mockSchema);
+
+      const labels = suggestions.map((s) => s.label);
+      assert.ok(!labels.includes("order:"));
+      assert.ok(labels.includes("limit:"));
+    });
+  });
+
+  describe("order-value suggestions", () => {
+    it("should suggest only entity fields when not after a field name", () => {
+      const ctx = {
+        kind: "order-value",
+        partial: "",
+        entityValue: "User",
+        afterField: false,
+      };
+      const suggestions = getSuggestions(ctx, mockSchema);
+
+      const labels = suggestions.map((s) => s.label);
+      assert.ok(labels.includes("id"));
+      assert.ok(labels.includes("name"));
+      assert.ok(labels.includes("status"));
+      assert.ok(labels.includes("age"));
+      assert.ok(!labels.includes("asc"), "should not suggest asc before a field name");
+      assert.ok(!labels.includes("desc"), "should not suggest desc before a field name");
+    });
+
+    it("should suggest asc/desc when after a field name", () => {
+      const ctx = {
+        kind: "order-value",
+        partial: "",
+        entityValue: "User",
+        afterField: true,
+      };
+      const suggestions = getSuggestions(ctx, mockSchema);
+
+      const labels = suggestions.map((s) => s.label);
+      assert.ok(labels.includes("asc"));
+      assert.ok(labels.includes("desc"));
+    });
+
+    it("should filter fields by partial match", () => {
+      const ctx = {
+        kind: "order-value",
+        partial: "na",
+        entityValue: "User",
+      };
+      const suggestions = getSuggestions(ctx, mockSchema);
+
+      const labels = suggestions.map((s) => s.label);
+      assert.strictEqual(suggestions.length, 1);
+      assert.strictEqual(labels[0], "name");
+    });
+
+    it("should suggest asc and desc when partial matches (after field name)", () => {
+      const ctx = {
+        kind: "order-value",
+        partial: "de",
+        entityValue: "User",
+        afterField: true,
+      };
+      const suggestions = getSuggestions(ctx, mockSchema);
+
+      const labels = suggestions.map((s) => s.label);
+      assert.ok(labels.includes("desc"));
+      assert.ok(!labels.includes("asc"));
     });
   });
 
@@ -508,6 +642,31 @@ describe("getSuggestionsAtCursor", () => {
     const labels = suggestions.map((s) => s.label);
     assert.strictEqual(suggestions.length, 1);
     assert.strictEqual(labels[0], "where:(");
+  });
+
+  it("entity:User order: should suggest only fields (not asc/desc)", () => {
+    const query = "entity:User order:";
+    const suggestions = getSuggestionsAtCursor(query, query.length, mockSchema);
+    const labels = suggestions.map((s) => s.label);
+    assert.ok(labels.includes("id"));
+    assert.ok(labels.includes("name"));
+    assert.ok(!labels.includes("asc"), "asc not valid as first order term");
+    assert.ok(!labels.includes("desc"), "desc not valid as first order term");
+  });
+
+  it("entity:User order:name should suggest asc and desc", () => {
+    const query = "entity:User order:name ";
+    const suggestions = getSuggestionsAtCursor(query, query.length, mockSchema);
+    const labels = suggestions.map((s) => s.label);
+    assert.ok(labels.includes("asc"));
+    assert.ok(labels.includes("desc"));
+  });
+
+  it("entity:User order:n should suggest name", () => {
+    const suggestions = getSuggestionsAtCursor("entity:User order:n", 20, mockSchema);
+    const labels = suggestions.map((s) => s.label);
+    assert.strictEqual(suggestions.length, 1);
+    assert.strictEqual(labels[0], "name");
   });
 
   it("should include replaceLength on suggestions for client replacement (e.g. entity:Us)", () => {

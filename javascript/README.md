@@ -1,11 +1,11 @@
-# reflog-ql
+# reflog-ql - [Demo](https://reflog-io.github.io/reflog-ql/)
 
 RQL (Reflog Query Language) - a query language with a **JSON schema** and a **single-line plain-text syntax** for use in search/filter bars (e.g. Datadog-style). This package provides a parser, validator, and autocomplete driven by a TypeScript schema (entities, relations, and fields).
 
 ## Install
 
 ```bash
-npm install reflog-ql
+npm install @reflog-io/rql
 ```
 
 **Repository layout:** Source and tests live in **`javascript/`**: `javascript/src/` (TypeScript), `javascript/demo/` (demo app), and built output in `javascript/dist/`. From the repo root, all scripts delegate to `javascript/`; you can also `cd javascript` and run `npm run build`, `npm run test`, `npm run demo` there.

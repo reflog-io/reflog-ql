@@ -15,7 +15,7 @@
     "pretest": "npm run build",
     "test": "node --test src/**/*.test.js",
     "prepare-demo": "node scripts/prepare-demo.js",
-    "demo": "npm run build && node scripts/prepare-demo.js && npx serve demo --open"
+    "demo": "npm run build && node scripts/prepare-demo.js && npx serve demo"
   },
   "devDependencies": {
     "serve": "^14.2.4",
